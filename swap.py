@@ -11,6 +11,7 @@ from uttils import (
     _build_remote_set_identity_cmd_no_shell,
     remote_expand_path,
     remove_tower_on_secondary,
+    copy_tower_main_to_secondary,
 )
 
 
@@ -137,6 +138,20 @@ def perform_swap(
     """
     # 0) прогрев SECONDARY
     _prewarm_secondary(secondary_cfg, remote_ledger)
+
+    # 0.5) попытаться скопировать tower с MAIN на SECONDARY (если есть)
+    try:
+        copied = copy_tower_main_to_secondary(
+            pubkey=current_voting_pubkey,
+            main_ledger=main_ledger,
+            secondary_cfg=secondary_cfg,
+            remote_ledger=remote_ledger,
+        )
+        if copied and verbose:
+            print(f"[VERBOSE] tower synced to SECONDARY: tower-1_9-{current_voting_pubkey}.bin")
+    except Exception as e:
+        if verbose:
+            print(f"[VERBOSE] tower sync skipped: {e}")
 
     # 1) заранее собираем ПОЛНУЮ команду без shell
     remote_cmd = _build_remote_set_identity_cmd_no_shell(

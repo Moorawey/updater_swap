@@ -528,6 +528,55 @@ def arm_remote_set_identity(secondary_cfg: SSHSettings, cmd_no_shell: str) -> su
     )
 
 
+# =============================== Tower sync ==================================
+def copy_tower_main_to_secondary(
+        *,
+        pubkey: str,
+        main_ledger: Path,
+        secondary_cfg: SSHSettings,
+        remote_ledger: Path,
+) -> bool:
+    """
+    Копирует tower-1_9-<PUBKEY>.bin из MAIN ledger в SECONDARY ledger.
+    Возвращает True, если копирование выполнено и файл появился на SECONDARY.
+    Нейминг файла фиксирован: tower-1_9-<PUBKEY>.bin
+    """
+    fname = f"tower-1_9-{pubkey}.bin"
+    src = Path(main_ledger) / fname
+    if not src.exists():
+        return False
+
+    # expand remote ledger
+    dest_dir = remote_expand_path(secondary_cfg, str(remote_ledger))
+    dest = f"{dest_dir}/{fname}"
+
+    # Если файл уже есть на SECONDARY — удалим все tower* для данного PUBKEY
+    try:
+        # мягко: если директория недоступна, remove_tower_on_secondary бросит — это хорошо, поймаем выше
+        remove_tower_on_secondary(pubkey, secondary_cfg, remote_ledger)
+    except Exception:
+        # если не получилось удалить — продолжим, scp всё равно перезапишет, а ниже проверим наличие
+        pass
+
+    # используем scp -P PORT и ключи из SSHSettings
+    scp_args = [
+        "scp",
+        *(_ssh_build_args(secondary_cfg, for_scp=True)),
+        str(src),
+        f"{secondary_cfg.user}@{secondary_cfg.host}:{dest}",
+    ]
+    try:
+        res = subprocess.run(scp_args, capture_output=True, text=True, timeout=10)
+        if res.returncode != 0:
+            return False
+    except Exception:
+        return False
+
+    # verify existence on remote
+    verify = run_remote(secondary_cfg, f"test -f {shlex.quote(dest)} && echo OK || echo NO")
+    return (verify.stdout or "").strip() == "OK"
+
+
 def _build_remote_set_identity_cmd_no_shell(
         remote_client: str,
         secondary_cfg: SSHSettings,
