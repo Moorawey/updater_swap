@@ -140,14 +140,15 @@ def perform_swap(
     _prewarm_secondary(secondary_cfg, remote_ledger)
 
     # 0.5) попытаться скопировать tower с MAIN на SECONDARY (если есть)
+    copied_tower = False
     try:
-        copied = copy_tower_main_to_secondary(
+        copied_tower = copy_tower_main_to_secondary(
             pubkey=current_voting_pubkey,
             main_ledger=main_ledger,
             secondary_cfg=secondary_cfg,
             remote_ledger=remote_ledger,
         )
-        if copied and verbose:
+        if copied_tower and verbose:
             print(f"[VERBOSE] tower synced to SECONDARY: tower-1_9-{current_voting_pubkey}.bin")
     except Exception as e:
         if verbose:
@@ -188,7 +189,7 @@ def perform_swap(
         if mode == "bg":
             # секунды экономятся: на SECONDARY триггерим fdctl в фоне и сразу занимаемся MAIN
             # (при необходимости почистим tower в отдельном раунде перед этим — но лучше хост держать чистым заранее)
-            if cleanup_remote_tower:
+            if cleanup_remote_tower and not copied_tower:
                 dir_q = shlex.quote(str(remote_ledger))
                 pk_q = shlex.quote(current_voting_pubkey)
                 if verbose:
@@ -216,7 +217,7 @@ def perform_swap(
         # sequential и armed — через одну долголивущую сессию внутри окна
         sess = SSHSession(secondary_cfg)  # одна SSH-сессия
         try:
-            if cleanup_remote_tower:
+            if cleanup_remote_tower and not copied_tower:
                 dir_q = shlex.quote(str(remote_ledger))
                 pk_q = shlex.quote(current_voting_pubkey)
                 if verbose:
@@ -315,7 +316,7 @@ def perform_swap(
     # 4) SECONDARY = AGAVE: одна сессия, но последовательный сценарий
     sess = SSHSession(secondary_cfg)
     try:
-        if cleanup_remote_tower:
+        if cleanup_remote_tower and not copied_tower:
             dir_q = shlex.quote(str(remote_ledger))
             pk_q = shlex.quote(current_voting_pubkey)
             if verbose:
