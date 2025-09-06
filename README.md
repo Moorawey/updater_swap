@@ -154,7 +154,7 @@ python3 hotswap_for_update.py verify
 
 ## Как это работает (коротко)
 1) Скрипт сверяет, что текущая `Identity` на MAIN совпадает с `MAIN key` и с `SECONDARY key` — это гарантия, что вы меняете именно голосующую `Identity`.
-2) Предварительно «прогревает» SECONDARY (SSH/ledger) и очищает tower-файлы SECONDARY для текущего PUBKEY (Актуально только для патченных клиентов).
+2) Предварительно «прогревает» SECONDARY (SSH/ledger) и копирует tower-файлы SECONDARY для текущего PUBKEY
 3) В sequential-режиме:
    - MAIN: выполняется `set-identity` на unstaked-ключ.
    - После завершения шага на MAIN — SECONDARY: выполняется `set-identity` на валидаторский ключ.
@@ -333,7 +333,7 @@ python3 hotswap_for_update.py verify \
 
 ## How it works (short)
 1) The script checks that current `Identity` on MAIN equals `MAIN key` and `SECONDARY key` — ensuring you are changing the voting `Identity`.
-2) SECONDARY is prewarmed (SSH/ledger) and tower files for the current PUBKEY are cleaned on SECONDARY (Relevant only for patched clients).
+2) SECONDARY is prewarmed (SSH/ledger) and tower files for the current PUBKEY are coped on SECONDARY
 3) In sequential mode:
    - MAIN: run `set-identity` to the unstaked key.
    - After MAIN completes — SECONDARY: run `set-identity` to the validator key.
