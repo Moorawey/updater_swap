@@ -209,18 +209,13 @@ def perform_swap(
                 sess.run(f'dir={dir_q}; pk={pk_q}; rm -f "$dir"/tower*-"$pk".bin || true; echo "TOWER_OK"')
 
             if mode == "sequential":
-                # как при ручном: MAIN, дождаться немного, затем SECONDARY
+                # как при ручном: MAIN, затем SECONDARY
                 p = _spawn_set_identity_main_async(main_client, main_ledger, local_unstaked_identity)
                 if verbose:
                     print(f"[VERBOSE] MAIN set-identity: {build_local_set_identity_cmd(main_client, main_ledger, local_unstaked_identity)}")
-                if (main_client or "").upper() == "AGAVE":
-                    # Активное ожидание ≤1с с ранним выходом
-                    t0 = time.time()
-                    while time.time() - t0 < 1.0:
-                        if p.poll() is not None:
-                            break
-                        time.sleep(0.05)
-                else:
+                # AGAVE->FD: без ожиданий (минимальное окно)
+                # FD->*: ждём до 10с, чтобы исключить гонки admin RPC
+                if (main_client or "").upper() == "FD":
                     try:
                         p.wait(timeout=10)
                     except Exception:
