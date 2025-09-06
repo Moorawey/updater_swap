@@ -213,10 +213,18 @@ def perform_swap(
                 p = _spawn_set_identity_main_async(main_client, main_ledger, local_unstaked_identity)
                 if verbose:
                     print(f"[VERBOSE] MAIN set-identity: {build_local_set_identity_cmd(main_client, main_ledger, local_unstaked_identity)}")
-                try:
-                    p.wait(timeout=10 if (main_client or "").upper() == "FD" else 6)
-                except Exception:
-                    pass
+                if (main_client or "").upper() == "AGAVE":
+                    # Активное ожидание ≤1с с ранним выходом
+                    t0 = time.time()
+                    while time.time() - t0 < 1.0:
+                        if p.poll() is not None:
+                            break
+                        time.sleep(0.05)
+                else:
+                    try:
+                        p.wait(timeout=10)
+                    except Exception:
+                        pass
                 # исполняем fdctl/agave на SECONDARY без лишнего bash -lc
                 # через открытую сессию делаем exec
                 if verbose:
