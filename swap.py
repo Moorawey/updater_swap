@@ -125,7 +125,7 @@ def perform_swap(
         remote_ledger: Path,
         cleanup_remote_tower: bool = True,  # флаг сохранил, но теперь чистка идёт в той же сессии
         fd_trigger_delay_ms: int = 10,
-        fd_mode: str = "armed",  # 'sequential' | 'armed' | 'bg'
+        fd_mode: str = "sequential",  # 'sequential' | 'armed' | 'bg'
         assume_yes: bool = False,
         verbose: bool = False,
 ) -> None:
@@ -222,6 +222,21 @@ def perform_swap(
                 if verbose:
                     print(f"[VERBOSE] SECONDARY exec: {remote_cmd}")
                 sess.run(f'exec {remote_cmd}', wait_output=False)
+                # Быстрое подтверждение завершения SECONDARY set-identity (до ~1s)
+                if verbose:
+                    print("[VERBOSE] SECONDARY (FD) wait completion (<=1s)…")
+                wait_cmd = (
+                    "for i in $(seq 1 10); do "
+                    "pgrep -af 'fdctl.*set-identity' >/dev/null 2>&1 || { echo DONE; exit 0; }; "
+                    "sleep 0.1; "
+                    "done; echo TIMEOUT"
+                )
+                try:
+                    res_wait = run_remote(secondary_cfg, wait_cmd)
+                    if verbose:
+                        print(f"[VERBOSE] SECONDARY (FD) wait status: {(res_wait.stdout or '').strip()}")
+                except Exception:
+                    pass
                 # не ждём завершение fdctl (чтобы не попасть в блок); сессия завершится сама
                 print("SWAP (FD sequential): ok")
                 return
