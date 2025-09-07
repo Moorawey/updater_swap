@@ -29,7 +29,7 @@ class CliArgs:
 
 def parse_args(argv: list[str]) -> CliArgs:
     if len(argv) < 2 or argv[1] != "verify":
-        print("Использование:")
+        print("Usage:")
         print("python ... verify [--ledger /path] [--local-validator-key /path] [--local-unstaked-identity /path]")
         print("[--remote-validator-key '$HOME/...'] [--remote-ledger '/path/on/secondary']")
         raise SystemExit(2)
@@ -50,7 +50,7 @@ def parse_args(argv: list[str]) -> CliArgs:
 
     args, unknown = p.parse_known_args(rest)
     if unknown:
-        print(f"Неизвестные аргументы: {' '.join(unknown)}")
+        print(f"Unknown arguments: {' '.join(unknown)}")
         raise SystemExit(2)
 
     return CliArgs(
@@ -85,6 +85,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         code = 130
     except Exception as e:
-        print("ОШИБКА:", e)
+        print("ERROR:", e)
         code = 1
     sys.exit(code)

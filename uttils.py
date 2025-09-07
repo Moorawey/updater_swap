@@ -121,7 +121,7 @@ def _get(env: dict, key: str, default: str | None = None) -> str:
         return env[key]
     if default is not None:
         return default
-    raise KeyError(f"Отсутствует обязательная переменная: {key}")
+    raise KeyError(f"Missing required environment variable: {key}")
 
 
 def _get_int(env: dict, key: str, default: int) -> int:
@@ -129,7 +129,7 @@ def _get_int(env: dict, key: str, default: int) -> int:
     try:
         return int(s)
     except ValueError:
-        raise ValueError(f"{key} должно быть числом, получено: {s!r}")
+        raise ValueError(f"{key} must be an integer, got: {s!r}")
 
 
 def _expand_path(s: str | None) -> Path | None:
@@ -163,9 +163,7 @@ def build_server_from_env(env_file: Path) -> SSHSettings:
 # ============================ Remote path helpers =============================
 
 def remote_expand_path(cfg: SSHSettings, path_str: str) -> str:
-    """
-    Раскрывает ~ и $VARS в пути на удалённом хосте и нормализует его.
-    """
+    """Expand ~ and $VARS on the remote host and normalize the path."""
     # Simple memoization to avoid repeated remote calls for the same path/user/host
     global _REMOTE_EXPAND_CACHE
     try:
@@ -187,14 +185,14 @@ def remote_expand_path(cfg: SSHSettings, path_str: str) -> str:
     out = (res.stdout or "").strip()
     if res.returncode != 0 or not out:
         raise RuntimeError(
-            "Не удалось раскрыть путь на удалённом хосте: " + path_str + "\n" + (res.stderr or res.stdout or "").strip()
+            "Failed to expand path on remote host: " + path_str + "\n" + (res.stderr or res.stdout or "").strip()
         )
     _REMOTE_EXPAND_CACHE[cache_key] = out
     return out
 
 
 def _sh_q(s: str) -> str:
-    """Мягкое экранирование для печати в логи/шелл."""
+    """Soft escaping for logs/shell printing."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
@@ -242,7 +240,7 @@ def _classify_pid(pid: str) -> Optional[str]:
 
 
 def _proc_uses_path(pid: str, needle: str) -> bool:
-    """Проверяем, имеет ли процесс файлы/dirs в заданном пути (ledger_dir)."""
+    """Check whether process uses files/dirs under the given path (ledger_dir)."""
     proc = Path("/proc") / pid
     needle = str(needle)
     # cwd
@@ -259,7 +257,7 @@ def _proc_uses_path(pid: str, needle: str) -> bool:
                 return True
     except Exception:
         pass
-    # cmdline (полезно для agave)
+    # cmdline (useful for agave)
     try:
         if needle and needle in _proc_cmdline(pid):
             return True
@@ -295,13 +293,13 @@ def detect_client_local(ledger_dir: str | Path | None = None) -> str:
 
 def detect_client_remote_type(cfg: SSHSettings, ledger_dir: str | Path | None = None) -> str:
     """
-    Гибридный детект клиента на SECONDARY:
-      1) Быстрый shell: pgrep + шаблоны 'run|run1|run-agave' для FD.
-      2) Если нет FD — ищем agave/solana-validator.
-      3) Если не нашли — python-парсер /proc (login_shell=True) с фильтром ledger_dir только для Agave.
-      Приоритет: FD > AGAVE > unknown.
+    Hybrid client detection on SECONDARY:
+      1) Quick shell: pgrep + patterns 'run|run1|run-agave' for FD.
+      2) If no FD — search for agave/solana-validator.
+      3) If still none — python /proc parser (login_shell=True) with ledger_dir filter for Agave.
+      Priority: FD > AGAVE > unknown.
     """
-    # 1) быстрый FD
+    # 1) quick FD
     fd_quick = (
         "bash -lc '"
         "pgrep -a fdctl 2>/dev/null | egrep -q \"(^| )run( |$)| run1 | run-agave\" && echo FD && exit 0; "
@@ -312,7 +310,7 @@ def detect_client_remote_type(cfg: SSHSettings, ledger_dir: str | Path | None = 
     if (r.stdout or "").strip().upper() == "FD":
         return "FD"
 
-    # 2) быстрый agave
+    # 2) quick agave
     agave_quick = (
         "bash -lc '"
         "pgrep -ax agave-validator >/dev/null 2>&1 && echo AGAVE && exit 0; "
@@ -323,7 +321,7 @@ def detect_client_remote_type(cfg: SSHSettings, ledger_dir: str | Path | None = 
     if (r.stdout or "").strip().upper() == "AGAVE":
         return "AGAVE"
 
-    # 3) точный /proc
+    # 3) precise /proc
     ldir = str(ledger_dir) if ledger_dir else ""
     remote_py = rf"""
 import os, re
@@ -419,26 +417,26 @@ def _remote_find_keygen(cfg: SSHSettings) -> str:
     res = run_remote(cfg, cmd, login_shell=False)
     path = (res.stdout or "").strip()
     if not path:
-        raise RuntimeError("На SECONDARY не найден solana-keygen/agave-keygen в PATH.")
+        raise RuntimeError("solana-keygen/agave-keygen not found in PATH on SECONDARY.")
     return remote_expand_path(cfg, path)
 
 
 def _remote_find_agave_cli(cfg: SSHSettings) -> str:
     """
-    Возвращает абсолютный путь к agave-validator или solana-validator на SECONDARY (user=root).
-    Порядок:
+    Return absolute path to agave-validator or solana-validator on SECONDARY.
+    Order:
       1) PATH (login-shell).
-      2) Подгрузка профилей ~/.profile, ~/.bash_profile, ~/.bashrc и повторная проверка PATH.
-      3) Фоллбек по стандартным путям установки Solana в $HOME/.local/share/solana/install/...
-      4) Если ничего — подробная диагностика и ошибка.
+      2) Source profiles ~/.profile, ~/.bash_profile, ~/.bashrc and re-check PATH.
+      3) Fallback to standard Solana install paths in $HOME/.local/share/solana/install/...
+      4) Otherwise, print diagnostics and error.
     """
-    # 1) через PATH «как есть»
+    # 1) via PATH as-is
     r1 = run_remote(cfg, "command -v agave-validator || command -v solana-validator || echo")
     p1 = (r1.stdout or "").strip()
     if p1:
         return remote_expand_path(cfg, p1)
 
-    # 2) подгрузить профили и повторить
+    # 2) source profiles and retry
     r2 = run_remote(
         cfg,
         "set -a; "
@@ -451,7 +449,7 @@ def _remote_find_agave_cli(cfg: SSHSettings) -> str:
     if p2:
         return remote_expand_path(cfg, p2)
 
-    # 3) фоллбек на типовые абсолютные пути Solana
+    # 3) fallback to typical Solana install paths
     probe = r'''
 set -e
 # active_release
@@ -459,7 +457,7 @@ cand1="$HOME/.local/share/solana/install/active_release/bin/agave-validator"
 cand2="$HOME/.local/share/solana/install/active_release/bin/solana-validator"
 if [ -x "$cand1" ]; then echo "$cand1"; exit 0; fi
 if [ -x "$cand2" ]; then echo "$cand2"; exit 0; fi
-# последний релиз из releases/*
+# latest release under releases/*
 c3="$(ls -1dt "$HOME"/.local/share/solana/install/releases/*/bin/agave-validator 2>/dev/null | head -n1 || true)"
 c4="$(ls -1dt "$HOME"/.local/share/solana/install/releases/*/bin/solana-validator 2>/dev/null | head -n1 || true)"
 if [ -n "$c3" ] && [ -x "$c3" ]; then echo "$c3"; exit 0; fi
@@ -471,7 +469,7 @@ exit 3
     if p3:
         return remote_expand_path(cfg, p3)
 
-    # 4) развернутая диагностика для понимания окружения на SECONDARY
+    # 4) extended diagnostics to understand SECONDARY environment
     diag = run_remote(
         cfg,
         'echo "USER=$(id -un) HOME=$HOME PATH=$PATH"; '
@@ -481,7 +479,7 @@ exit 3
         'echo DONE'
     )
     raise RuntimeError(
-        "На SECONDARY не найден agave-validator/solana-validator ни в PATH, ни в стандартных путях.\n"
+        "agave-validator/solana-validator not found on SECONDARY in PATH or standard locations.\n"
         f"--- STDOUT ---\n{(diag.stdout or '').strip()}\n--- STDERR ---\n{(diag.stderr or '').strip()}"
     )
 
@@ -491,7 +489,7 @@ def _remote_find_fdctl(cfg: SSHSettings) -> str:
     res = run_remote(cfg, cmd, login_shell=False)
     path = (res.stdout or "").strip()
     if not path:
-        raise RuntimeError("На SECONDARY не найден fdctl в PATH.")
+        raise RuntimeError("fdctl not found in PATH on SECONDARY.")
     return remote_expand_path(cfg, path)
 
 
@@ -510,17 +508,13 @@ for p in cands:
         print(p)
         break
 """
-    # тоже без вложенного bash -lc тут — run_remote сам обернёт
     res = run_remote(cfg, "python3 - <<'PY'\n" + remote_py + "\nPY")
     out = (res.stdout or "").strip()
     return remote_expand_path(cfg, out) if out else None
 
 
 def arm_remote_set_identity(secondary_cfg: SSHSettings, cmd_no_shell: str) -> subprocess.Popen:
-    """
-    Открываем SSH-сессию заранее: удалённая сторона ждёт ENTER, затем exec <cmd>.
-    Важно: тут НЕ login-shell, т.к. команда уже абсолютами.
-    """
+    """Open SSH session: remote waits for ENTER, then exec <cmd>. No login-shell here."""
     remote_sh = f'read -r _; exec {cmd_no_shell}'
     ssh_cmd = build_ssh_command(secondary_cfg, remote_sh)
     return subprocess.Popen(
@@ -536,11 +530,6 @@ def copy_tower_main_to_secondary(
         secondary_cfg: SSHSettings,
         remote_ledger: Path,
 ) -> bool:
-    """
-    Копирует tower-1_9-<PUBKEY>.bin из MAIN ledger в SECONDARY ledger.
-    Возвращает True, если копирование выполнено и файл появился на SECONDARY.
-    Нейминг файла фиксирован: tower-1_9-<PUBKEY>.bin
-    """
     fname = f"tower-1_9-{pubkey}.bin"
     src = Path(main_ledger) / fname
     if not src.exists():
@@ -550,15 +539,11 @@ def copy_tower_main_to_secondary(
     dest_dir = remote_expand_path(secondary_cfg, str(remote_ledger))
     dest = f"{dest_dir}/{fname}"
 
-    # Если файл уже есть на SECONDARY — удалим все tower* для данного PUBKEY
     try:
-        # мягко: если директория недоступна, remove_tower_on_secondary бросит — это хорошо, поймаем выше
         remove_tower_on_secondary(pubkey, secondary_cfg, remote_ledger)
     except Exception:
-        # если не получилось удалить — продолжим, scp всё равно перезапишет, а ниже проверим наличие
         pass
 
-    # используем scp -P PORT и ключи из SSHSettings
     scp_args = [
         "scp",
         *(_ssh_build_args(secondary_cfg, for_scp=True)),
@@ -583,7 +568,7 @@ def _build_remote_set_identity_cmd_no_shell(
         remote_ledger: Path,
         new_key_path_str: str,
 ) -> str:
-    """Собирает ПОЛНУЮ команду для SECONDARY (без login-shell), только абсолюты."""
+    """Build a FULL command for SECONDARY (no login-shell), absolute paths only."""
     kind = remote_client.upper()
     LEDGER = remote_expand_path(secondary_cfg, str(remote_ledger))
     KEY = remote_expand_path(secondary_cfg, str(new_key_path_str))
@@ -603,10 +588,7 @@ def _build_remote_set_identity_cmd_no_shell(
 # =============================== Tower helpers ================================
 
 def remove_tower_on_secondary(pubkey: str, secondary_cfg: SSHSettings, remote_ledger: Path) -> None:
-    """
-    Удаляет на SECONDARY все файлы tower*-<PUBKEY>.bin в каталоге remote_ledger.
-    Бросает исключение, если после удаления что-то осталось.
-    """
+    """Remove all tower*-<PUBKEY>.bin files on SECONDARY in remote_ledger."""
     dest_dir = remote_expand_path(secondary_cfg, str(remote_ledger))
     remote_py = rf"""
 import os
@@ -633,35 +615,35 @@ except Exception as e:
     res = run_remote(secondary_cfg, "python3 - <<'PY'\n" + remote_py + "\nPY")
     out = (res.stdout or "").strip()
     if not out.startswith("OK "):
-        raise RuntimeError(f"[SECONDARY] удаление tower-файлов не удалось: {out or res.stderr}")
+        raise RuntimeError(f"[SECONDARY] tower removal failed: {out or res.stderr}")
     try:
         _, removed_str, left_str = out.split(maxsplit=2)
         left = int(left_str)
     except Exception:
-        raise RuntimeError(f"[SECONDARY] неожиданный ответ при удалении tower-файлов: {out}")
+        raise RuntimeError(f"[SECONDARY] unexpected response while removing tower files: {out}")
     if left > 0:
         raise RuntimeError(
-            f"[SECONDARY] после удаления осталось {left} tower-файл(ов). Проверьте права/путь: {dest_dir}")
+            f"[SECONDARY] {left} tower file(s) left after removal. Check permissions/path: {dest_dir}")
 
 
 def _local_find_agave_cli() -> str | None:
-    """Возвращает путь к agave-validator или solana-validator из PATH, либо None."""
+    """Return agave-validator or solana-validator from PATH, or None."""
     for name in ("agave-validator", "solana-validator"):
         p = shutil.which(name)
         if p:
             return p
-    # Если PATH «голый» (systemd/cron) — попробуем login-shell
+    # If PATH is empty (systemd/cron) — try login-shell
     proc = run_local(["/bin/bash", "-lc", "command -v agave-validator || command -v solana-validator || echo"])
     path = (proc.stdout or "").strip()
     return path or None
 
 
 def _local_find_keygen() -> str | None:
-    """Возвращает путь к solana-keygen или agave-keygen из PATH, либо None."""
+    """Return solana-keygen or agave-keygen from PATH, or None."""
     p = shutil.which("solana-keygen") or shutil.which("agave-keygen")
     if p:
         return p
-    # Если PATH «голый» (systemd/cron), попробуем login-shell:
+    # If PATH is empty (systemd/cron), try login-shell:
     proc = run_local(["/bin/bash", "-lc", "command -v solana-keygen || command -v agave-keygen || echo"])
     path = (proc.stdout or "").strip()
     return path or None
@@ -669,23 +651,20 @@ def _local_find_keygen() -> str | None:
 
 def get_remote_pubkey_from_keyfile_via_keygen(cfg: SSHSettings, key_path_str: str) -> str:
     """
-    SECONDARY: вернуть pubkey из keypair.json.
-    Порядок:
-      1) Проверяем читаемость ключа (после expand $HOME/~/).
-      2) Пытаемся через PATH: solana-keygen/agave-keygen.
-      3) Фоллбек: solana address -k.
-      4) Резерв: явные пути keygen в $HOME/.local/share/solana/install/...
-    ВАЖНО: run_remote по умолчанию даёт login-shell, поэтому передаём ОДНУ строку.
+    SECONDARY: return pubkey from keypair.json.
+    Order:
+      1) Check readability (after expanding $HOME/~/).
+      2) Try via PATH: solana-keygen/agave-keygen.
+      3) Fallback: solana address -k.
+      4) Reserve: explicit keygen paths under $HOME/.local/share/solana/install/...
+    IMPORTANT: run_remote uses login-shell by default, so pass a single command string.
     """
-    # аккуратно раскрываем $HOME/~/ на удалёнке один раз
     key_path = remote_expand_path(cfg, key_path_str)
 
-    # 1) ключ читается?
     res_chk = run_remote(cfg, f'[ -r {shlex.quote(key_path)} ] && echo OK || echo NO_KEY')
     if (res_chk.stdout or "").strip() != "OK":
-        raise RuntimeError(f"Удалённый ключ не найден/не читается: {key_path}")
+        raise RuntimeError(f"Remote key not found/not readable: {key_path}")
 
-    # 2) keygen через PATH
     cmd_kgen = (
         f'(command -v solana-keygen >/dev/null 2>&1 && solana-keygen pubkey {shlex.quote(key_path)}) || '
         f'(command -v agave-keygen  >/dev/null 2>&1 && agave-keygen  pubkey {shlex.quote(key_path)}) || '
@@ -696,14 +675,12 @@ def get_remote_pubkey_from_keyfile_via_keygen(cfg: SSHSettings, key_path_str: st
     if out1:
         return out1
 
-    # 3) fallback: solana address -k
     cmd_sol = f'command -v solana >/dev/null 2>&1 && solana address -k {shlex.quote(key_path)} || echo'
     r2 = run_remote(cfg, cmd_sol)
     out2 = (r2.stdout or "").strip()
     if out2:
         return out2
 
-    # 4) резервные явные пути (частая инсталляция у root)
     probe = rf'''
 set -e
 K1="$HOME/.local/share/solana/install/active_release/bin/solana-keygen"
@@ -717,7 +694,7 @@ exit 3
     if out3:
         return out3
 
-    # Диагностика — покажем окружение root на SECONDARY
+    # Diagnostics — show environment on SECONDARY
     diag = run_remote(cfg,
                       f'echo "USER=$(id -un) HOME=$HOME SHELL=$SHELL"; '
                       f'echo "PATH=$PATH"; '
@@ -729,33 +706,33 @@ exit 3
                       f'echo DONE'
                       )
     raise RuntimeError(
-        "На SECONDARY не найден solana-keygen/agave-keygen и не сработал fallback `solana address -k`.\n"
+        "solana-keygen/agave-keygen not found on SECONDARY and fallback `solana address -k` failed.\n"
         f"--- STDOUT ---\n{(diag.stdout or '').strip()}\n--- STDERR ---\n{(diag.stderr or '').strip()}"
     )
 
 
 # =============================== Tower helpers ================================
 def get_local_pubkey_from_keyfile(keyfile: Path) -> str:
-    """Возвращает pubkey из локального keypair.json через keygen/address."""
+    """Return pubkey from local keypair.json via keygen/address."""
     keyfile = Path(keyfile).expanduser()
     keygen = _local_find_keygen()
     if keygen:
         proc = run_local([keygen, "pubkey", str(keyfile)])
         if proc.returncode == 0 and (proc.stdout or "").strip():
             return (proc.stdout or "").strip()
-    # fallback через `solana address -k`
+    # fallback via `solana address -k`
     proc = run_local(["bash", "-lc", f"solana address -k {shlex.quote(str(keyfile))} || echo"])
     out = (proc.stdout or "").strip()
     if out:
         return out
-    raise RuntimeError(f"Не удалось получить pubkey из {keyfile}")
+    raise RuntimeError(f"Failed to get pubkey from {keyfile}")
 
 
 def get_local_identity_from_monitor(ledger_path: Path, agave_bin: str = "agave-validator",
                                     wait_sec: float = 3.0) -> str:
     """
-    Запускает `agave-validator --ledger <path> monitor`, читает строки до "Identity:",
-    затем аккуратно завершает процесс.
+    Run `agave-validator --ledger <path> monitor`, read lines until "Identity:",
+    then gracefully terminate the process.
     """
     proc = subprocess.Popen(
         [agave_bin, "--ledger", str(ledger_path), "monitor"],
@@ -776,7 +753,7 @@ def get_local_identity_from_monitor(ledger_path: Path, agave_bin: str = "agave-v
             if time.time() - start > wait_sec:
                 break
     finally:
-        # Попробуем корректно остановить
+        # Try to gracefully stop
         try:
             proc.terminate()
             proc.wait(timeout=1.0)
@@ -787,5 +764,5 @@ def get_local_identity_from_monitor(ledger_path: Path, agave_bin: str = "agave-v
                 pass
 
     if not identity:
-        raise RuntimeError("Не удалось извлечь Identity из вывода 'agave-validator monitor'")
+        raise RuntimeError("Failed to extract Identity from 'agave-validator monitor' output")
     return identity
