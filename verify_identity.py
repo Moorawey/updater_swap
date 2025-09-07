@@ -19,6 +19,7 @@ from uttils import (
 )
 
 from swap import perform_swap
+from pathlib import Path as _P
 
 # helpers expected:
 # get_local_identity_from_monitor(main_ledger) -> str
@@ -73,8 +74,41 @@ def verify(
             remote_client = 'FD'
         print(f"[SECONDARY] Client (by CLI presence): {remote_client}")
 
-    # fast mode: skip monitor, compare keys only
+    # Sanity checks: paths on MAIN and SECONDARY
+    problems: list[str] = []
+    # MAIN paths
+    if not _P(main_ledger).exists():
+        problems.append(f"MAIN ledger not found: {main_ledger}")
+    if not _P(main_key).exists():
+        problems.append(f"MAIN validator key not found: {main_key}")
+    unst = (local_unstaked_identity or LOCAL_UNSTAKED_IDENTITY)
+    if not _P(unst).exists():
+        problems.append(f"MAIN unstaked identity not found: {unst}")
+
+    # SECONDARY paths (expand remotely)
     r_key = remote_validator_key or str(REMOTE_VALIDATOR_KEY)
+    try:
+        rk_exp = run_remote(secondary_cfg, f'[ -r {r_key} ] && echo OK || echo NO')
+        if (rk_exp.stdout or '').strip() != 'OK':
+            problems.append(f"SECONDARY validator key not readable: {r_key}")
+    except Exception as e:
+        problems.append(f"SECONDARY key check failed: {e}")
+
+    remote_ledger_effective = (remote_ledger or (Path(REMOTE_LEDGER_PATH) if REMOTE_LEDGER_PATH else main_ledger))
+    try:
+        led_path = run_remote(secondary_cfg, f'[ -d {remote_ledger_effective} ] && echo OK || echo NO')
+        if (led_path.stdout or '').strip() != 'OK':
+            problems.append(f"SECONDARY ledger directory not found: {remote_ledger_effective}")
+    except Exception as e:
+        problems.append(f"SECONDARY ledger check failed: {e}")
+
+    if problems:
+        print("Pre-flight checks failed:")
+        for p in problems:
+            print(" -", p)
+        return 2
+
+    # fast mode: skip monitor, compare keys only
     if fast:
         main_key_pub = get_local_pubkey_from_keyfile(main_key)
         secondary_key_pub = get_remote_pubkey_from_keyfile_via_keygen(secondary_cfg, r_key)

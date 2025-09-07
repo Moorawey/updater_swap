@@ -46,12 +46,17 @@ def parse_args(argv: list[str]) -> CliArgs:
     p.add_argument("--fast", dest="fast", action="store_true")
     p.add_argument("--main-client", dest="force_main_client", choices=["AGAVE","FD"], default=None)
     p.add_argument("--remote-client", dest="force_remote_client", choices=["AGAVE","FD"], default=None)
-    p.add_argument("-v", "--verbose", action="store_true")
+    # Verbosity: default ON, allow --quiet to turn off
+    p.add_argument("-v", "--verbose", action="store_true", default=None)
+    p.add_argument("-q", "--quiet", action="store_true", default=False)
 
     args, unknown = p.parse_known_args(rest)
     if unknown:
         print(f"Unknown arguments: {' '.join(unknown)}")
         raise SystemExit(2)
+
+    # verbose default: True unless --quiet; if -v set, keep True
+    verbose_effective = False if args.quiet else (True if args.verbose is None else args.verbose)
 
     return CliArgs(
         ledger=args.ledger,
@@ -63,7 +68,7 @@ def parse_args(argv: list[str]) -> CliArgs:
         fast=args.fast,
         force_main_client=args.force_main_client,
         force_remote_client=args.force_remote_client,
-        verbose=args.verbose,
+        verbose=verbose_effective,
     )
 
 
