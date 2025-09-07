@@ -91,11 +91,12 @@ python3 hotswap_for_update.py verify --yes
 По умолчанию:
 - используется `--ledger` из `remote_config.py` (или укажите вручную);
 - sequential-режим для FD/AGAVE (самый стабильный);
-- будет выведен план, выполнены сверки и запущен быстрый swap.
+- включён подробный лог (можно отключить флагом `--quiet`);
+- выполняются pre-flight проверки путей на MAIN/SECONDARY; при успехе — перенос tower и запуск swap.
 
-Для подробного логирования. Запуск через --verbose запускает скрипт без ручного подтверждения через клавишу ENTER
+Тише логи:
 ```bash
-python3 hotswap_for_update.py verify --yes --verbose
+python3 hotswap_for_update.py verify --yes --quiet
 ```
 
 ---
@@ -145,16 +146,16 @@ python3 hotswap_for_update.py verify \
   --yes --verbose
 ```
 
-### 5) Как делаю я, при правильно заполненном remote_config.py
+### 5) Как делаю я (автор), при правильно заполненном `remote_config.py`
 ```bash
-python3 hotswap_for_update.py verify
+python3 hotswap_for_update.py verify --yes
 ```
 
 ---
 
 ## Как это работает (коротко)
 1) Скрипт сверяет, что текущая `Identity` на MAIN совпадает с `MAIN key` и с `SECONDARY key` — это гарантия, что вы меняете именно голосующую `Identity`.
-2) Предварительно «прогревает» SECONDARY (SSH/ledger) и копирует tower-файлы SECONDARY для текущего PUBKEY
+2) Предварительно «прогревает» SECONDARY (SSH/ledger) и копирует tower‑файл для текущего PUBKEY (при наличии). Перед копированием удаляются старые `tower*-PUBKEY.bin` на SECONDARY.
 3) В sequential-режиме:
    - MAIN: выполняется `set-identity` на unstaked-ключ.
    - После завершения шага на MAIN — SECONDARY: выполняется `set-identity` на валидаторский ключ.
@@ -275,11 +276,12 @@ python3 hotswap_for_update.py verify --yes
 By default:
 - `--ledger` is taken from `remote_config.py` (or set it explicitly);
 - sequential mode is used for FD/AGAVE (stable and fast);
-- plan/verification is printed and a fast swap is executed.
+- verbose logging is enabled (use `--quiet` to reduce output);
+- pre-flight checks validate MAIN/SECONDARY paths; on success — tower copy and swap start.
 
-For detailed logging. Running with `--verbose` starts the script without manual ENTER confirmation:
+Quieter logs:
 ```bash
-python3 hotswap_for_update.py verify --yes --verbose
+python3 hotswap_for_update.py verify --yes --quiet
 ```
 
 ---
@@ -333,7 +335,7 @@ python3 hotswap_for_update.py verify \
 
 ## How it works (short)
 1) The script checks that current `Identity` on MAIN equals `MAIN key` and `SECONDARY key` — ensuring you are changing the voting `Identity`.
-2) SECONDARY is prewarmed (SSH/ledger) and tower files for the current PUBKEY are coped on SECONDARY
+2) SECONDARY is prewarmed (SSH/ledger) and the tower file for the current PUBKEY is copied to SECONDARY (if present). Old `tower*-PUBKEY.bin` files are removed on SECONDARY before copying.
 3) In sequential mode:
    - MAIN: run `set-identity` to the unstaked key.
    - After MAIN completes — SECONDARY: run `set-identity` to the validator key.
